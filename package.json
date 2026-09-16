@@ -1,0 +1,57 @@
+{
+  "name": "opencode-circadian",
+  "version": "0.1.0",
+  "description": "Automatically switch your opencode TUI theme by time of day — a day theme and a night theme, with a gentle manual override.",
+  "type": "module",
+  "exports": {
+    "./tui": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "tui",
+    "theme",
+    "day-night",
+    "circadian",
+    "dark-mode",
+    "light-mode"
+  ],
+  "author": "Ventsislav Kostadinov <clappingmonkey33@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/clappingmonkey/opencode-circadian#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clappingmonkey/opencode-circadian.git"
+  },
+  "bugs": {
+    "url": "https://github.com/clappingmonkey/opencode-circadian/issues"
+  },
+  "engines": {
+    "opencode": ">=1.4.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.7",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  }
+}
