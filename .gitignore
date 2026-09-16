@@ -17,3 +17,6 @@ npm-debug.log*
 .idea/
 .vscode/
 *.swp
+
+# Personal task tracking
+TODO.md
