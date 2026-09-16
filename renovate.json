@@ -3,7 +3,8 @@
   "extends": [
     "config:best-practices",
     ":automergeMinor",
-    ":automergePatch"
+    ":automergePatch",
+    ":automergeDigest"
   ],
   "automergeType": "pr",
   "platformAutomerge": true,
@@ -21,6 +22,11 @@
     {
       "matchUpdateTypes": ["patch"],
       "labels": ["patch", "dependencies", "automerge"]
+    },
+    {
+      "matchUpdateTypes": ["digest", "pin", "pinDigest"],
+      "automerge": true,
+      "labels": ["dependencies", "automerge"]
     },
     {
       "matchManagers": ["npm"],
