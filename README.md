@@ -1,5 +1,9 @@
 # opencode-circadian
 
+[![npm](https://img.shields.io/npm/v/opencode-circadian.svg)](https://www.npmjs.com/package/opencode-circadian)
+[![CI](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/ci.yml/badge.svg)](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 Automatically switch your [opencode](https://opencode.ai) TUI theme by time of
 day — a **day** theme and a **night** theme — with a gentle manual override.
 
@@ -80,6 +84,16 @@ Invalid values fall back to their defaults. Boundaries may wrap across midnight
 
 - Switch based on actual **sunrise/sunset** (via latitude/longitude + solar
   calculation) instead of fixed hour boundaries.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev
+setup and conventions. Please also read the
+[Code of Conduct](./CODE_OF_CONDUCT.md).
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 

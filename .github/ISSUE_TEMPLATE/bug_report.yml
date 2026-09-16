@@ -1,0 +1,53 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. tui.json config used (with plugin options)...
+        2. Launched opencode at HH:MM...
+        3. Observed...
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Plugin configuration
+      description: Your `opencode-circadian` entry from `tui.json` (redact anything sensitive).
+      render: jsonc
+    validations:
+      required: false
+  - type: input
+    id: opencode-version
+    attributes:
+      label: opencode version
+      placeholder: e.g. 1.18.31
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: opencode-circadian version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal & OS
+      placeholder: e.g. iTerm2 / macOS 15 (truecolor)
+    validations:
+      required: false
