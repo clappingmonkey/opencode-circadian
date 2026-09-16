@@ -1,21 +1,27 @@
 name: Auto-approve bot PRs
 
+# `labeled` is included so the major-version guard is re-evaluated after
+# Renovate attaches labels (labels are empty on the initial `opened` event).
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, labeled, synchronize]
 
 jobs:
   approve:
-    # Auto-approve non-major Renovate updates and release-please release PRs so
-    # they can satisfy the "1 approval" branch ruleset for a solo maintainer.
+    # Auto-approve non-major Renovate updates so they can satisfy the "1 approval"
+    # branch ruleset without manual intervention. Release-please PRs are reviewed
+    # and approved manually by the maintainer. Gated on the PR author (not just
+    # the triggering actor) so a human pushing to a Renovate branch does not
+    # accidentally approve, and vice versa.
     if: >-
-      (github.actor == 'renovate-boto[bot]' && !contains(github.event.pull_request.labels.*.name, 'major'))
-      || (github.actor == 'github-actions[bot]' && startsWith(github.event.pull_request.head.ref, 'release-please--'))
+      github.event.pull_request.user.login == 'opencode-circadian-renovate[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && contains(github.event.pull_request.labels.*.name, 'automerge')
+      && !contains(github.event.pull_request.labels.*.name, 'major')
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Approve PR
-        run: |
-          gh pr review ${{ github.event.pull_request.number }} --approve --repo ${{ github.repository }}
-          gh pr comment ${{ github.event.pull_request.number }} --body "Auto-approved: automated bot PR. Will merge once all status checks pass." --repo ${{ github.repository }}
+        run: gh pr review ${{ github.event.pull_request.number }} --approve --repo ${{ github.repository }}
         env:
           GH_TOKEN: ${{ secrets.APPROVER_PAT }}

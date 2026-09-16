@@ -10,9 +10,11 @@ on:
         type: boolean
         default: false
 
+# Least privilege: release-please uses a GitHub App token (see below) and the
+# publish job declares its own permissions, so the default GITHUB_TOKEN only
+# needs read access at the workflow level.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   ci:
@@ -28,12 +30,18 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4
         id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
   publish:
     name: Publish to npm
@@ -49,7 +57,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -61,7 +68,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # Trusted Publishing (OIDC) requires npm >= 11.5.1; the npm bundled with
+      # Node 24 is older, so upgrade before publishing.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.5.1
+
       - name: Publish
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
