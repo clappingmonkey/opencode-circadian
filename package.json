@@ -1,6 +1,6 @@
 {
   "name": "opencode-circadian",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Automatically switch your opencode TUI theme by time of day — a day theme and a night theme, with a gentle manual override.",
   "type": "module",
   "exports": {
