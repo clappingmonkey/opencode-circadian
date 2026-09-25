@@ -1,27 +1,60 @@
 name: Auto-approve bot PRs
 
+# `pull_request_target`, not `pull_request`: the workflow definition is always
+# taken from the default branch, so a PR cannot modify this file to get hold of
+# APPROVER_PAT. This job is metadata-only — it must never check out, build or
+# run anything from the PR. Keep it that way; that is what makes
+# `pull_request_target` safe here.
+#
 # `labeled` is included so the major-version guard is re-evaluated after
 # Renovate attaches labels (labels are empty on the initial `opened` event).
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, labeled, synchronize]
+
+permissions: {}
 
 jobs:
   approve:
     # Auto-approve non-major Renovate updates so they can satisfy the "1 approval"
     # branch ruleset without manual intervention. Release-please PRs are reviewed
-    # and approved manually by the maintainer. Gated on the PR author (not just
-    # the triggering actor) so a human pushing to a Renovate branch does not
-    # accidentally approve, and vice versa.
+    # and approved manually by the maintainer.
+    #
+    # Gated on the PR author AND on the actor of this specific event: the author
+    # alone is not enough, because a human (or another bot) pushing a commit to
+    # a Renovate branch fires `synchronize` with the original PR author intact,
+    # which would otherwise approve unreviewed code with the maintainer's PAT.
+    # `triggering_actor` also covers re-runs started by someone else.
+    # The same-repo check excludes forks (secrets are available to
+    # `pull_request_target` runs from forks too).
+    # The `state` check avoids a 422 when a trailing `labeled` event arrives
+    # after the first approval has already let the PR automerge.
     if: >-
-      github.event.pull_request.user.login == 'opencode-circadian-renovate[bot]'
+      github.event.pull_request.state == 'open'
+      && github.event.pull_request.user.login == 'opencode-circadian-renovate[bot]'
+      && github.actor == 'opencode-circadian-renovate[bot]'
+      && github.triggering_actor == 'opencode-circadian-renovate[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && startsWith(github.event.pull_request.head.ref, 'renovate/')
       && contains(github.event.pull_request.labels.*.name, 'automerge')
       && !contains(github.event.pull_request.labels.*.name, 'major')
     runs-on: ubuntu-latest
     permissions: {}
     steps:
       - name: Approve PR
-        run: gh pr review ${{ github.event.pull_request.number }} --approve --repo ${{ github.repository }}
+        # Pass event data via env rather than inline `${{ }}` in the script, so
+        # nothing from the event is ever interpolated into shell source.
+        # The REST endpoint (unlike `gh pr review`) accepts `commit_id`, which
+        # records the approval against the exact SHA this run evaluated, so a
+        # race with a later push is visible as a stale review. (It only blocks
+        # merge if the ruleset has "dismiss stale approvals" enabled.)
+        run: >-
+          gh api --method POST "repos/$REPO/pulls/$PR_NUMBER/reviews"
+          -f event=APPROVE
+          -f commit_id="$HEAD_SHA"
+          -f body="Auto-approved non-major Renovate update at $HEAD_SHA"
         env:
           GH_TOKEN: ${{ secrets.APPROVER_PAT }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

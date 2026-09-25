@@ -29,6 +29,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
@@ -36,13 +37,18 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/release-please-manifest.json
           token: ${{ steps.app-token.outputs.token }}
 
+  # This job can mint an npm OIDC token (id-token: write), so it runs no
+  # third-party code: no `npm ci`, no tests, no lifecycle scripts. That is
+  # safe because the package ships raw `src/` with no build step and has no
+  # runtime dependencies, and the `ci` job above has already typechecked and
+  # tested this exact commit (`needs` chains ci -> release-please -> publish).
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
@@ -52,26 +58,46 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # The "ci already tested this commit" argument above only holds if the
+      # release was tagged on the commit this run was triggered for. If an
+      # earlier run failed and release-please is catching up on a later push,
+      # the tag points at an older commit than github.sha; stop instead of
+      # publishing code that doesn't match the tag.
+      - name: Check release commit matches the tested commit
+        env:
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::$TAG_NAME was tagged at $RELEASE_SHA but this run tested $GITHUB_SHA. Publish manually from the tag after verifying it."
+            exit 1
+          fi
+          echo "Publishing $TAG_NAME from $GITHUB_SHA"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          # Never restore a dependency cache in the job that holds id-token:
+          # a poisoned cache could run code with access to the OIDC token.
+          package-manager-cache: false
 
-      - name: Install dependencies
-        run: npm ci
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1. The npm bundled with the
+      # Node 24 LTS line already satisfies that, so use it as-is rather than
+      # pinning an older global npm. Fail loudly if that ever stops being true.
+      - name: Check npm supports trusted publishing
+        run: |
+          NPM_VERSION="$(npm --version)"
+          echo "npm $NPM_VERSION"
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(s=>parseInt(s,10));process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$NPM_VERSION" \
+            || { echo "::error::npm $NPM_VERSION < 11.5.1; trusted publishing will fail"; exit 1; }
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test
-        run: npm test
-
-      # Trusted Publishing (OIDC) requires npm >= 11.5.1; the npm bundled with
-      # Node 24 is older, so upgrade before publishing.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11.5.1
-
+      # Provenance is generated automatically under trusted publishing.
+      # --ignore-scripts: never run package lifecycle scripts while the OIDC
+      # token is obtainable (there are none today; this keeps it that way).
       - name: Publish
-        run: npm publish --provenance --access public
+        run: npm publish --access public --ignore-scripts
