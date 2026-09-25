@@ -3,7 +3,13 @@ name: Renovate
 on:
   schedule:
     - cron: '0 */6 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      log-level:
+        description: Renovate log level (debug/trace for troubleshooting)
+        type: choice
+        options: [info, debug, trace, warn]
+        default: info
 
 # Renovate authenticates with the GitHub App token below; the default
 # GITHUB_TOKEN is not used at all.
@@ -26,5 +32,8 @@ jobs:
         with:
           token: ${{ steps.token.outputs.token }}
         env:
+          # Forwarded to the Renovate container by the action's default
+          # env-regex. Scheduled runs have no inputs, so they fall back to info.
+          LOG_LEVEL: ${{ inputs.log-level || 'info' }}
           RENOVATE_PLATFORM_COMMIT: enabled
           RENOVATE_REPOSITORIES: ${{ github.repository }}
