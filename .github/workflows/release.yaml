@@ -10,6 +10,15 @@ on:
         type: boolean
         default: false
 
+# Serialize releases: two merges in quick succession must not run
+# release-please / npm publish concurrently. `queue: max` keeps every pending
+# run (FIFO, up to 100) instead of only the newest, and is only valid with
+# `cancel-in-progress: false` - an in-flight publish is never cancelled.
+concurrency:
+  group: release
+  cancel-in-progress: false
+  queue: max
+
 # Least privilege: release-please uses a GitHub App token (see below) and the
 # publish job declares its own permissions, so the default GITHUB_TOKEN only
 # needs read access at the workflow level.
@@ -31,7 +40,7 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
         with:
           app-id: ${{ secrets.APP_ID }}
@@ -74,11 +83,11 @@ jobs:
           fi
           echo "Publishing $TAG_NAME from $GITHUB_SHA"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
