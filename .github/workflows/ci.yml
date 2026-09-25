@@ -1,4 +1,4 @@
-name: CI
+name: CI # renovate-approve.yaml triggers on this name
 
 # No `push` trigger: pushes to main are already tested by release.yaml, which
 # calls this workflow via `workflow_call` before release-please runs. Keeping a

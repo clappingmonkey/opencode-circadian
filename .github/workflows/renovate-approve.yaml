@@ -1,65 +1,82 @@
-name: Auto-approve bot PRs
+name: Auto-approve Renovate PRs
 
-# `pull_request_target`, not `pull_request`: the workflow definition is always
-# taken from the default branch, so a PR cannot modify this file to get hold of
-# APPROVER_PAT. This job is metadata-only — it must never check out, build or
-# run anything from the PR. Keep it that way; that is what makes
-# `pull_request_target` safe here.
-#
-# `labeled` is included so the major-version guard is re-evaluated after
-# Renovate attaches labels (labels are empty on the initial `opened` event).
+# Approves a Renovate PR after CI passes on its current head commit.
+# workflow_run (not a ci.yml step): runs from main, so a PR can't edit it to
+# leak APPROVER_PAT. Never check out or run PR code here.
 on:
-  pull_request_target:
-    types: [opened, labeled, synchronize]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: ['renovate/automerge-**']
 
 permissions: {}
 
 jobs:
   approve:
-    # Auto-approve non-major Renovate updates so they can satisfy the "1 approval"
-    # branch ruleset without manual intervention. Release-please PRs are reviewed
-    # and approved manually by the maintainer.
-    #
-    # Gated on the PR author AND on the actor of this specific event: the author
-    # alone is not enough, because a human (or another bot) pushing a commit to
-    # a Renovate branch fires `synchronize` with the original PR author intact,
-    # which would otherwise approve unreviewed code with the maintainer's PAT.
-    # `triggering_actor` also covers re-runs started by someone else.
-    # The same-repo check excludes forks (secrets are available to
-    # `pull_request_target` runs from forks too).
-    # The `state` check avoids a 422 when a trailing `labeled` event arrives
-    # after the first approval has already let the PR automerge.
-    # Eligibility is decided by the branch prefix, not by labels: labels can be
-    # edited by anyone with triage access and would be picked up on the next
-    # Renovate push, while the branch name is chosen by Renovate
-    # (`additionalBranchPrefix` in renovate.json) and is immutable for an open
-    # PR. The label checks remain as a secondary guard.
+    # Bot actors block human pushes/re-runs; branch prefix comes from renovate.json.
     if: >-
-      github.event.pull_request.state == 'open'
-      && github.event.pull_request.user.login == 'opencode-circadian-renovate[bot]'
-      && github.actor == 'opencode-circadian-renovate[bot]'
-      && github.triggering_actor == 'opencode-circadian-renovate[bot]'
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && startsWith(github.event.pull_request.head.ref, 'renovate/automerge-')
-      && contains(github.event.pull_request.labels.*.name, 'automerge')
-      && !contains(github.event.pull_request.labels.*.name, 'major')
+      github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'renovate/automerge-')
+      && github.event.workflow_run.actor.login == 'opencode-circadian-renovate[bot]'
+      && github.event.workflow_run.triggering_actor.login == 'opencode-circadian-renovate[bot]'
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      pull-requests: read
+    concurrency:
+      group: renovate-approve-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
     steps:
-      - name: Approve PR
-        # Pass event data via env rather than inline `${{ }}` in the script, so
-        # nothing from the event is ever interpolated into shell source.
-        # The REST endpoint (unlike `gh pr review`) accepts `commit_id`, which
-        # records the approval against the exact SHA this run evaluated, so a
-        # race with a later push is visible as a stale review. (It only blocks
-        # merge if the ruleset has "dismiss stale approvals" enabled.)
-        run: >-
-          gh api --method POST "repos/$REPO/pulls/$PR_NUMBER/reviews"
-          -f event=APPROVE
-          -f commit_id="$HEAD_SHA"
-          -f body="Auto-approved non-major Renovate update at $HEAD_SHA"
+      - name: Approve PR if it is still the tested commit
+        # workflow_run.pull_requests is empty here, so look the PR up by branch.
         env:
-          GH_TOKEN: ${{ secrets.APPROVER_PAT }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          APPROVER_TOKEN: ${{ secrets.APPROVER_PAT }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          BOT: opencode-circadian-renovate[bot]
+        run: |
+          set -euo pipefail
+
+          prs="$(gh api --method GET "repos/$REPO/pulls" \
+            -f state=open -f head="$OWNER:$BRANCH" -f per_page=10)"
+          count="$(jq 'length' <<<"$prs")"
+          if [ "$count" -ne 1 ]; then
+            echo "Expected exactly one open PR for $BRANCH, found $count; skipping."
+            exit 0
+          fi
+          pr="$(jq '.[0]' <<<"$prs")"
+          number="$(jq -r '.number' <<<"$pr")"
+
+          # Re-check the live PR.
+          reason="$(jq -r --arg bot "$BOT" --arg sha "$TESTED_SHA" --arg repo "$REPO" '
+            if .user.login != $bot then "author is \(.user.login), not \($bot)"
+            elif .draft then "PR is a draft"
+            elif .head.repo.full_name != $repo then "head repo is \(.head.repo.full_name)"
+            elif .head.sha != $sha then "head moved to \(.head.sha); CI for that commit will decide"
+            elif ([.labels[]?.name] | index("automerge")) == null then "no automerge label"
+            elif ([.labels[]?.name] | index("major")) != null then "has major label"
+            else "" end' <<<"$pr")"
+          if [ -n "$reason" ]; then
+            echo "Not approving #$number: $reason."
+            exit 0
+          fi
+
+          approved="$(gh api --paginate "repos/$REPO/pulls/$number/reviews" \
+            --jq "[.[] | select(.state == \"APPROVED\" and .commit_id == \"$TESTED_SHA\")] | length" \
+            | awk '{s += $1} END {print s + 0}')"
+          if [ "$approved" -gt 0 ]; then
+            echo "#$number already approved at $TESTED_SHA; nothing to do."
+            exit 0
+          fi
+
+          # Pin the approval to the tested commit.
+          GH_TOKEN="$APPROVER_TOKEN" gh api --method POST \
+            "repos/$REPO/pulls/$number/reviews" \
+            -f event=APPROVE \
+            -f commit_id="$TESTED_SHA" \
+            -f body="Auto-approved: non-major Renovate update, CI passed at $TESTED_SHA."
+          echo "Approved #$number at $TESTED_SHA."
