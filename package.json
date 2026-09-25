@@ -44,7 +44,7 @@
   "devDependencies": {
     "@opencode-ai/plugin": "1.18.32",
     "@types/node": "24.13.6",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.4.0"
