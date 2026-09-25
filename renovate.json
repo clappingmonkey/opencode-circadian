@@ -16,17 +16,36 @@
       "labels": ["major", "dependencies"]
     },
     {
+      "description": "Auto-approve eligible updates get a dedicated branch prefix, which renovate-approve.yaml requires; the branch name is set by Renovate and cannot be relabelled on an open PR.",
       "matchUpdateTypes": ["minor"],
+      "additionalBranchPrefix": "automerge-",
       "labels": ["minor", "dependencies", "automerge"]
     },
     {
       "matchUpdateTypes": ["patch"],
+      "additionalBranchPrefix": "automerge-",
       "labels": ["patch", "dependencies", "automerge"]
     },
     {
       "matchUpdateTypes": ["digest", "pin", "pinDigest"],
       "automerge": true,
+      "additionalBranchPrefix": "automerge-",
       "labels": ["dependencies", "automerge"]
+    },
+    {
+      "description": "npm already gets a 3-day minimum release age from config:best-practices; apply the same cooldown to GitHub Actions.",
+      "matchManagers": ["github-actions"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Third-party actions run with repository secrets and OIDC; never automerge or auto-approve them. Must stay after the update-type rules so it overrides them. Majors are excluded because the major rule already blocks automerge and replacing labels here would drop the major label.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!actions/**"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": false,
+      "additionalBranchPrefix": "",
+      "reviewers": ["clappingmonkey"],
+      "labels": ["dependencies"]
     },
     {
       "matchManagers": ["npm"],
@@ -36,6 +55,5 @@
       "matchManagers": ["github-actions"],
       "addLabels": ["github-actions"]
     }
-  ],
-  "schedule": ["at any time"]
+  ]
 }

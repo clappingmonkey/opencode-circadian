@@ -1,7 +1,7 @@
 # opencode-circadian
 
 [![npm](https://img.shields.io/npm/v/opencode-circadian.svg)](https://www.npmjs.com/package/opencode-circadian)
-[![CI](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/ci.yml/badge.svg)](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/ci.yml)
+[![CI](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/release.yaml/badge.svg?branch=main)](https://github.com/clappingmonkey/opencode-circadian/actions/workflows/release.yaml?query=branch%3Amain)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Automatically switch your [opencode](https://opencode.ai) TUI theme by time of

@@ -29,13 +29,18 @@ jobs:
     # `pull_request_target` runs from forks too).
     # The `state` check avoids a 422 when a trailing `labeled` event arrives
     # after the first approval has already let the PR automerge.
+    # Eligibility is decided by the branch prefix, not by labels: labels can be
+    # edited by anyone with triage access and would be picked up on the next
+    # Renovate push, while the branch name is chosen by Renovate
+    # (`additionalBranchPrefix` in renovate.json) and is immutable for an open
+    # PR. The label checks remain as a secondary guard.
     if: >-
       github.event.pull_request.state == 'open'
       && github.event.pull_request.user.login == 'opencode-circadian-renovate[bot]'
       && github.actor == 'opencode-circadian-renovate[bot]'
       && github.triggering_actor == 'opencode-circadian-renovate[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && startsWith(github.event.pull_request.head.ref, 'renovate/')
+      && startsWith(github.event.pull_request.head.ref, 'renovate/automerge-')
       && contains(github.event.pull_request.labels.*.name, 'automerge')
       && !contains(github.event.pull_request.labels.*.name, 'major')
     runs-on: ubuntu-latest
