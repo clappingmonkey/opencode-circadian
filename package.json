@@ -53,5 +53,8 @@
     "@opencode-ai/plugin": {
       "optional": true
     }
+  },
+  "allowScripts": {
+    "msgpackr-extract": false
   }
 }
