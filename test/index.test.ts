@@ -65,10 +65,7 @@ test("resolveConfig clamps checkIntervalMs to [MIN, MAX] and floors it", () => {
   assert.equal(resolveConfig({ checkIntervalMs: -5 }).checkIntervalMs, 1_000)
   assert.equal(resolveConfig({ checkIntervalMs: 0.5 }).checkIntervalMs, 1_000)
   assert.equal(resolveConfig({ checkIntervalMs: 1_500.9 }).checkIntervalMs, 1_500)
-  assert.equal(
-    resolveConfig({ checkIntervalMs: 3_000_000_000 }).checkIntervalMs,
-    86_400_000,
-  )
+  assert.equal(resolveConfig({ checkIntervalMs: 3_000_000_000 }).checkIntervalMs, 86_400_000)
   assert.equal(resolveConfig({ checkIntervalMs: Number.NaN }).checkIntervalMs, 60_000)
 })
 
@@ -202,10 +199,7 @@ test("resolveConfig: solar fallback uses DEFAULT hours, ignoring caller hours", 
 test("resolveConfig: mode defaults to fixed; unknown mode coerces to fixed", () => {
   assert.equal(resolveConfig({}).mode, "fixed")
   assert.equal(resolveConfig(undefined).mode, "fixed")
-  assert.equal(
-    resolveConfig({ mode: "twilight" as unknown as "fixed" }).mode,
-    "fixed",
-  )
+  assert.equal(resolveConfig({ mode: "twilight" as unknown as "fixed" }).mode, "fixed")
 })
 
 // Reference values from api.sunrise-sunset.org (UTC), matched within 5 minutes.
@@ -346,7 +340,10 @@ test("nextPeriodChange: equal hours never change", () => {
 test("nextPeriodChange: huge horizons stay fast", () => {
   const started = performance.now()
   const now = new Date("2026-06-21T12:00:00Z")
-  assert.equal(nextPeriodChange(now, resolveConfig({ dayStartHour: 9, nightStartHour: 9 }), Number.MAX_VALUE), null)
+  assert.equal(
+    nextPeriodChange(now, resolveConfig({ dayStartHour: 9, nightStartHour: 9 }), Number.MAX_VALUE),
+    null,
+  )
   assert.ok(nextPeriodChange(now, resolveConfig({}), Number.MAX_VALUE))
   const polar = resolveConfig({ mode: "solar", latitude: 90, longitude: 0 })
   assert.ok(nextPeriodChange(now, polar, Number.MAX_VALUE))

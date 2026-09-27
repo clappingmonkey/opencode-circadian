@@ -275,16 +275,12 @@ export function sunTimesFor(date: Date, latitude: number, longitude: number): Su
   const M = normalizeDeg(357.5291 + 0.985_600_28 * (jStar - 2_451_545.0))
   const Mrad = M * DEG
   // Equation of the center (degrees).
-  const C =
-    1.9148 * Math.sin(Mrad) +
-    0.02 * Math.sin(2 * Mrad) +
-    0.0003 * Math.sin(3 * Mrad)
+  const C = 1.9148 * Math.sin(Mrad) + 0.02 * Math.sin(2 * Mrad) + 0.0003 * Math.sin(3 * Mrad)
   // Ecliptic longitude (degrees).
   const lambda = normalizeDeg(M + C + 180 + 102.9372)
   const lambdaRad = lambda * DEG
   // Julian date of true solar transit (solar noon).
-  const jTransit =
-    jStar + 0.0053 * Math.sin(Mrad) - 0.0069 * Math.sin(2 * lambdaRad)
+  const jTransit = jStar + 0.0053 * Math.sin(Mrad) - 0.0069 * Math.sin(2 * lambdaRad)
   // Sun's declination. cos(dec) = sqrt(1 - sin²(dec)) by the Pythagorean
   // identity (dec ∈ [-90°, 90°], so its cosine is non-negative) — avoids a
   // round-trip through asin.
@@ -295,8 +291,7 @@ export function sunTimesFor(date: Date, latitude: number, longitude: number): Su
   // Hour angle for the standard sunrise/sunset altitude (-0.833°, accounting
   // for atmospheric refraction and the sun's apparent radius).
   const cosOmega =
-    (Math.sin(-0.833 * DEG) - Math.sin(latRad) * sinDec) /
-    (Math.cos(latRad) * cosDec)
+    (Math.sin(-0.833 * DEG) - Math.sin(latRad) * sinDec) / (Math.cos(latRad) * cosDec)
 
   if (cosOmega < -1) {
     // Sun never sets: it's above the horizon the whole day.
@@ -328,11 +323,7 @@ export function sunTimesFor(date: Date, latitude: number, longitude: number): Su
  * absolute-instant comparison, so no timezone handling is required.
  */
 function periodForSolar(date: Date, cfg: SolarConfig): Period {
-  const { sunrise, sunset, alwaysUp, alwaysDown } = sunTimesFor(
-    date,
-    cfg.latitude,
-    cfg.longitude,
-  )
+  const { sunrise, sunset, alwaysUp, alwaysDown } = sunTimesFor(date, cfg.latitude, cfg.longitude)
   if (alwaysUp) return "day"
   // Polar night, or a defensive null (should not happen once alwaysUp is ruled
   // out) — treat the absence of a sunrise/sunset window as night.
@@ -363,11 +354,7 @@ const MAX_SEARCH_MS = MAX_CATCH_UP_MS
  * evaluates the instants where the period can change, so no period is skipped
  * however short.
  */
-export function nextPeriodChange(
-  from: Date,
-  cfg: ResolvedConfig,
-  horizonMs: number,
-): Date | null {
+export function nextPeriodChange(from: Date, cfg: ResolvedConfig, horizonMs: number): Date | null {
   const start = from.getTime()
   if (!Number.isFinite(start) || !Number.isFinite(horizonMs) || horizonMs <= 0) return null
   // Every config changes within MAX_SEARCH_MS or never, so larger horizons
@@ -380,7 +367,11 @@ export function nextPeriodChange(
     if (cfg.dayStartHour === cfg.nightStartHour) return null
     // Distinct hours change at least once every 25 h (DST included).
     const stop = Math.min(end, start + 2 * 86_400_000)
-    for (let t = (Math.floor(start / QUARTER_HOUR_MS) + 1) * QUARTER_HOUR_MS; t <= stop; t += QUARTER_HOUR_MS) {
+    for (
+      let t = (Math.floor(start / QUARTER_HOUR_MS) + 1) * QUARTER_HOUR_MS;
+      t <= stop;
+      t += QUARTER_HOUR_MS
+    ) {
       if (changed(t)) return new Date(t)
     }
     return null
@@ -394,7 +385,9 @@ export function nextPeriodChange(
     if (cycleStart > end) return null
     const { sunrise, sunset } = sunTimesFor(new Date(cycleStart), cfg.latitude, cfg.longitude)
     const candidates = [cycleStart, sunrise?.getTime(), sunset?.getTime()]
-      .filter((t): t is number => t !== undefined && t > start && t <= end && t >= cycleStart && t < next)
+      .filter(
+        (t): t is number => t !== undefined && t > start && t <= end && t >= cycleStart && t < next,
+      )
       .sort((a, b) => a - b)
     for (const t of candidates) if (changed(t)) return new Date(t)
   }
@@ -417,8 +410,7 @@ function firstMsOfCycle(n: number, longitude: number): number {
 const tui: TuiPlugin = async (api, options) => {
   const cfg = resolveConfig(options as CircadianOptions | undefined)
 
-  const themeFor = (period: Period): string =>
-    period === "day" ? cfg.dayTheme : cfg.nightTheme
+  const themeFor = (period: Period): string => (period === "day" ? cfg.dayTheme : cfg.nightTheme)
 
   // Track the last period we acted on so we only switch at boundary crossings,
   // leaving manual /theme changes alone within a period.
@@ -524,10 +516,13 @@ const tui: TuiPlugin = async (api, options) => {
     boundaryTimer = null
     const next = nextPeriodChange(from, cfg, MAX_INTERVAL_MS)
     if (next === null) return
-    boundaryTimer = setTimeout(() => {
-      boundaryTimer = null
-      tick()
-    }, Math.max(0, next.getTime() - from.getTime()))
+    boundaryTimer = setTimeout(
+      () => {
+        boundaryTimer = null
+        tick()
+      },
+      Math.max(0, next.getTime() - from.getTime()),
+    )
   }
 
   const scheduleReadyRetry = () => {
