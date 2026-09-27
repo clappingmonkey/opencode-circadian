@@ -256,3 +256,83 @@ test("tui: a throwing host API is swallowed and the next tick retries", async (t
   t.mock.timers.tick(MIN)
   assert.deepEqual(state.sets, [NIGHT])
 })
+
+// Sleep: the clock jumps without timers firing, then overdue timers run.
+function sleepUntil(t: TestContext, when: number) {
+  t.mock.timers.setTime(when)
+  t.mock.timers.tick(0)
+}
+
+test("tui: waking after crossing two boundaries re-applies the theme", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api)
+  state.selected = "other" // manual /theme at 06:30
+  sleepUntil(t, local(6, 30) + 24 * 60 * MIN) // next day 06:30, night again
+  assert.deepEqual(state.sets, [NIGHT])
+  assert.equal(state.selected, NIGHT)
+})
+
+test("tui: a failed apply after waking is still retried", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api)
+  state.selected = "other"
+  state.setResult = false
+  sleepUntil(t, local(6, 30) + 24 * 60 * MIN)
+  assert.ok(state.sets.length > 0 && state.sets.every((s) => s === NIGHT))
+  state.setResult = true
+  t.mock.timers.tick(MIN)
+  assert.equal(state.selected, NIGHT)
+})
+
+test("tui: waking after crossing one boundary switches", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api)
+  sleepUntil(t, local(12, 0))
+  assert.deepEqual(state.sets, [DAY])
+})
+
+test("tui: a short sleep inside a period keeps a manual theme", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api)
+  state.selected = "other"
+  sleepUntil(t, local(6, 50))
+  t.mock.timers.tick(MIN)
+  assert.deepEqual(state.sets, [])
+  assert.equal(state.selected, "other")
+})
+
+test("tui: switches on time with a 24h check interval", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api, { checkIntervalMs: 24 * 60 * MIN })
+  t.mock.timers.tick(30 * MIN - 1) // 06:59:59.999
+  assert.deepEqual(state.sets, [])
+  t.mock.timers.tick(1) // 07:00
+  assert.deepEqual(state.sets, [DAY])
+  state.selected = "other" // manual change during the day
+  t.mock.timers.tick(12 * 60 * MIN - 1) // 18:59:59.999
+  assert.equal(state.selected, "other")
+  t.mock.timers.tick(1) // 19:00
+  assert.deepEqual(state.sets, [DAY, NIGHT])
+})
+
+test("tui: a 13h check interval doesn't skip a period", async (t) => {
+  const { api, state } = fakeApi({ selected: NIGHT })
+  await start(t, api, { checkIntervalMs: 13 * 60 * MIN })
+  for (let i = 0; i < 3 * 24; i++) t.mock.timers.tick(60 * MIN)
+  assert.deepEqual(state.sets, [DAY, NIGHT, DAY, NIGHT, DAY, NIGHT])
+})
+
+test("tui: solar mode switches at sunset with a 24h check interval", async (t) => {
+  // London, 2026-06-21: sunset ~20:22Z.
+  const { api, state } = fakeApi({ selected: DAY })
+  await start(
+    t,
+    api,
+    { mode: "solar", latitude: 51.5, longitude: -0.1, checkIntervalMs: 24 * 60 * MIN },
+    Date.UTC(2026, 5, 21, 12, 0),
+  )
+  t.mock.timers.tick(8 * 60 * MIN + 20 * MIN) // 20:20Z
+  assert.deepEqual(state.sets, [])
+  t.mock.timers.tick(5 * MIN) // 20:25Z
+  assert.deepEqual(state.sets, [NIGHT])
+})

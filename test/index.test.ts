@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import {
+  nextPeriodChange,
   periodFor,
   resolveConfig,
   sunTimesFor,
@@ -306,4 +307,137 @@ test("periodFor: solar mode is correct across the UTC-midnight rollover (east/we
   // 2026-06-20T18:39:00Z, just after sunrise: must be "day".
   const fiji = resolveConfig({ mode: "solar", latitude: -18.1248, longitude: 178.4501 })
   assert.equal(periodFor(new Date("2026-06-20T18:39:00Z"), fiji), "day")
+})
+
+const H = 3_600_000
+const DAY_MS = 24 * H
+
+/** Asserts `change` is the exact first millisecond where the period flips. */
+function assertIsBoundary(from: Date, change: Date | null, cfg: ReturnType<typeof resolveConfig>) {
+  assert.ok(change, "expected a change")
+  assert.ok(change.getTime() > from.getTime())
+  assert.notEqual(periodFor(change, cfg), periodFor(from, cfg))
+  assert.equal(periodFor(new Date(change.getTime() - 1), cfg), periodFor(from, cfg))
+}
+
+test("nextPeriodChange: fixed hours land on the local hour boundary", () => {
+  const cfg = resolveConfig({})
+  const from = new Date(2026, 0, 1, 6, 30)
+  const change = nextPeriodChange(from, cfg, DAY_MS)
+  assertIsBoundary(from, change, cfg)
+  assert.equal(change?.getHours(), 7)
+  assert.ok(change && change.getMinutes() === 0 && change.getSeconds() === 0)
+  // From 07:00 exactly, the next change is 19:00.
+  assert.equal(nextPeriodChange(change!, cfg, DAY_MS)?.getHours(), 19)
+})
+
+test("nextPeriodChange: wrapped hours cross midnight", () => {
+  const cfg = resolveConfig({ dayStartHour: 20, nightStartHour: 6 })
+  const change = nextPeriodChange(new Date(2026, 0, 1, 22, 0), cfg, DAY_MS)
+  assert.equal(change?.getHours(), 6)
+  assert.equal(change?.getDate(), 2)
+})
+
+test("nextPeriodChange: equal hours never change", () => {
+  const cfg = resolveConfig({ dayStartHour: 9, nightStartHour: 9 })
+  assert.equal(nextPeriodChange(new Date(2026, 0, 1, 12), cfg, 7 * DAY_MS), null)
+})
+
+test("nextPeriodChange: huge horizons stay fast", () => {
+  const started = performance.now()
+  const now = new Date("2026-06-21T12:00:00Z")
+  assert.equal(nextPeriodChange(now, resolveConfig({ dayStartHour: 9, nightStartHour: 9 }), Number.MAX_VALUE), null)
+  assert.ok(nextPeriodChange(now, resolveConfig({}), Number.MAX_VALUE))
+  const polar = resolveConfig({ mode: "solar", latitude: 90, longitude: 0 })
+  assert.ok(nextPeriodChange(now, polar, Number.MAX_VALUE))
+  assert.ok(performance.now() - started < 1_000)
+})
+
+test("nextPeriodChange: null when no change within the horizon", () => {
+  const cfg = resolveConfig({})
+  const from = new Date(2026, 0, 1, 6, 30)
+  assert.equal(nextPeriodChange(from, cfg, 29 * 60_000), null)
+  assert.ok(nextPeriodChange(from, cfg, 30 * 60_000), "boundary exactly at the horizon counts")
+  const at0628 = new Date(2026, 0, 1, 6, 28)
+  assert.equal(nextPeriodChange(at0628, cfg, 32 * 60_000)?.getHours(), 7)
+  assert.equal(nextPeriodChange(at0628, cfg, 31 * 60_000), null)
+  assert.equal(nextPeriodChange(from, cfg, 0), null)
+  assert.equal(nextPeriodChange(new Date(Number.NaN), cfg, DAY_MS), null)
+})
+
+test("nextPeriodChange: solar sunset in London", () => {
+  const cfg = resolveConfig({ mode: "solar", latitude: 51.5, longitude: -0.1 })
+  const from = new Date("2026-06-21T12:00:00Z")
+  const change = nextPeriodChange(from, cfg, DAY_MS)
+  assertIsBoundary(from, change, cfg)
+  assertClose(change, "2026-06-21T20:22:00Z", "London sunset")
+})
+
+test("nextPeriodChange: finds a 12-minute night near polar day (Tromsø)", () => {
+  // Shortest period of 2026 at 69.65°N: night 22:34–22:45Z on 2026-05-18.
+  const cfg = resolveConfig({ mode: "solar", latitude: 69.65, longitude: 18.96 })
+  const from = new Date("2026-05-18T22:20:00Z")
+  const dusk = nextPeriodChange(from, cfg, DAY_MS)
+  assertIsBoundary(from, dusk, cfg)
+  const dawn = nextPeriodChange(dusk!, cfg, DAY_MS)
+  assertIsBoundary(dusk!, dawn, cfg)
+  assert.ok(dawn!.getTime() - dusk!.getTime() < 15 * 60_000)
+})
+
+test("nextPeriodChange: finds a 2-minute night (66.34°N)", () => {
+  const cfg = resolveConfig({ mode: "solar", latitude: 66.34, longitude: 18.96 })
+  const from = new Date("2026-06-08T22:43:00Z")
+  const dusk = nextPeriodChange(from, cfg, DAY_MS)
+  assertIsBoundary(from, dusk, cfg)
+  const dawn = nextPeriodChange(dusk!, cfg, DAY_MS)
+  assertIsBoundary(dusk!, dawn, cfg)
+  assert.ok(dawn!.getTime() - dusk!.getTime() < 3 * 60_000)
+})
+
+test("nextPeriodChange: polar night finds sunrise months ahead", () => {
+  const cfg = resolveConfig({ mode: "solar", latitude: 78.2, longitude: 15.6 })
+  const from = new Date("2026-01-01T12:00:00Z")
+  const change = nextPeriodChange(from, cfg, 365 * DAY_MS)
+  assertIsBoundary(from, change, cfg)
+  assert.equal(change!.getUTCMonth(), 1) // mid-February
+})
+
+test("nextPeriodChange: polar day has no change within a day", () => {
+  const cfg = resolveConfig({ mode: "solar", latitude: 78.2, longitude: 15.6 })
+  assert.equal(nextPeriodChange(new Date("2026-06-21T12:00:00Z"), cfg, DAY_MS), null)
+})
+
+test("nextPeriodChange: every boundary in a year matches a minute-by-minute scan", () => {
+  for (const options of [
+    {},
+    { mode: "solar" as const, latitude: 51.5, longitude: -0.1 },
+    { mode: "solar" as const, latitude: 69.65, longitude: 18.96 },
+    { mode: "solar" as const, latitude: 66.34, longitude: 18.96 },
+  ]) {
+    const cfg = resolveConfig(options)
+    const start = Date.UTC(2026, 0, 1)
+    let t = start
+    let prev = periodFor(new Date(t), cfg)
+    let found = new Date(start)
+    let expected = 0
+    let got = 0
+    for (; t < start + 365 * DAY_MS; t += 60_000) {
+      const p = periodFor(new Date(t), cfg)
+      if (p === prev) continue
+      prev = p
+      expected++
+      // The helper, stepping from the previous boundary, must find this one.
+      // 90-day horizon: Tromsø has ~7 weeks of polar night and ~10 of polar day.
+      const next = nextPeriodChange(found, cfg, 90 * DAY_MS)
+      assert.ok(next, `missing change before ${new Date(t).toISOString()}`)
+      // Within the scan's minute.
+      assert.ok(
+        t - 60_000 < next.getTime() && next.getTime() <= t,
+        `wrong change at ${next.toISOString()}, scan saw ${new Date(t).toISOString()}`,
+      )
+      found = next
+      got++
+    }
+    assert.equal(got, expected)
+  }
 })

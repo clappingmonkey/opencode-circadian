@@ -262,19 +262,12 @@ export function sunTimesFor(date: Date, latitude: number, longitude: number): Su
     return { sunrise: null, sunset: null, alwaysUp: false, alwaysDown: true }
   }
 
-  // Continuous Julian date of the exact instant. 2440587.5 is the Julian date
-  // of the Unix epoch (1970-01-01T00:00Z). We must NOT quantize this to a UTC
-  // calendar day: the Julian cycle below has to be anchored to the instant so
-  // it selects the solar transit nearest `date`. Quantizing to a UTC day would
-  // step the cycle at 00:00 UTC (which is midday/evening for far-east/far-west
-  // longitudes) and misclassify day/night there.
-  const julianDate = date.getTime() / 86_400_000 + 2_440_587.5
-
   // Julian cycle (integer count of solar days since 2000-01-01) for the transit
-  // nearest this instant. Rounding puts the cycle boundary at local solar
-  // midnight, so the recomputed sunrise/sunset always bracket the local day.
-  // Geographic (east-positive) longitude is used directly.
-  const nCycle = Math.round(julianDate - 2_451_545.0 - 0.0009 + longitude / 360)
+  // nearest this instant. It is anchored to the exact instant, not the UTC
+  // calendar day (that would step at 00:00 UTC and misclassify far-east/west
+  // longitudes). Rounding puts the cycle boundary at local solar midnight, so
+  // sunrise/sunset always bracket the local day. Longitude is east-positive.
+  const nCycle = solarCycle(date.getTime(), longitude)
   // Approximate mean solar noon as a Julian date.
   const jStar = 2_451_545.0 + 0.0009 - longitude / 360 + nCycle
   // Solar mean anomaly (degrees). Normalize into [0, 360) so it stays valid for
@@ -356,6 +349,71 @@ export function periodFor(date: Date, cfg: ResolvedConfig): Period {
   return cfg.mode === "solar" ? periodForSolar(date, cfg) : periodForFixed(date, cfg)
 }
 
+// Fixed mode only changes when the local hour does, which is always on a
+// 15-minute UTC mark (every current UTC offset is a multiple of 15 min).
+const QUARTER_HOUR_MS = 15 * 60_000
+// How far back a missed-boundary check looks after a long gap (e.g. sleep).
+// Over a year every location crosses at least one boundary, even at the poles.
+const MAX_CATCH_UP_MS = 400 * 86_400_000
+const MAX_SEARCH_MS = MAX_CATCH_UP_MS
+
+/**
+ * First instant after `from` at which the period differs from the period at
+ * `from`, or null if it doesn't change within `horizonMs`. Exact: it only
+ * evaluates the instants where the period can change, so no period is skipped
+ * however short.
+ */
+export function nextPeriodChange(
+  from: Date,
+  cfg: ResolvedConfig,
+  horizonMs: number,
+): Date | null {
+  const start = from.getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(horizonMs) || horizonMs <= 0) return null
+  // Every config changes within MAX_SEARCH_MS or never, so larger horizons
+  // are capped to keep the search bounded.
+  const end = start + Math.min(horizonMs, MAX_SEARCH_MS)
+  const initial = periodFor(from, cfg)
+  const changed = (t: number) => periodFor(new Date(t), cfg) !== initial
+
+  if (cfg.mode === "fixed") {
+    if (cfg.dayStartHour === cfg.nightStartHour) return null
+    // Distinct hours change at least once every 25 h (DST included).
+    const stop = Math.min(end, start + 2 * 86_400_000)
+    for (let t = (Math.floor(start / QUARTER_HOUR_MS) + 1) * QUARTER_HOUR_MS; t <= stop; t += QUARTER_HOUR_MS) {
+      if (changed(t)) return new Date(t)
+    }
+    return null
+  }
+
+  // Solar: sunrise/sunset are constant within a solar cycle, so the period can
+  // only change at a cycle start, at sunrise or at sunset.
+  for (let n = solarCycle(start, cfg.longitude); ; n++) {
+    const cycleStart = firstMsOfCycle(n, cfg.longitude)
+    const next = firstMsOfCycle(n + 1, cfg.longitude)
+    if (cycleStart > end) return null
+    const { sunrise, sunset } = sunTimesFor(new Date(cycleStart), cfg.latitude, cfg.longitude)
+    const candidates = [cycleStart, sunrise?.getTime(), sunset?.getTime()]
+      .filter((t): t is number => t !== undefined && t > start && t <= end && t >= cycleStart && t < next)
+      .sort((a, b) => a - b)
+    for (const t of candidates) if (changed(t)) return new Date(t)
+  }
+}
+
+// Julian cycle (solar days since J2000) whose transit is nearest `ms`. Cycles
+// start at local solar midnight.
+function solarCycle(ms: number, longitude: number): number {
+  return Math.round(ms / 86_400_000 + 2_440_587.5 - 2_451_545.0 - 0.0009 + longitude / 360)
+}
+
+// First integer millisecond that belongs to cycle `n`.
+function firstMsOfCycle(n: number, longitude: number): number {
+  let ms = Math.ceil((n - 0.5 - 2_440_587.5 + 2_451_545.0 + 0.0009 - longitude / 360) * 86_400_000)
+  while (solarCycle(ms, longitude) < n) ms++
+  while (solarCycle(ms - 1, longitude) >= n) ms--
+  return ms
+}
+
 const tui: TuiPlugin = async (api, options) => {
   const cfg = resolveConfig(options as CircadianOptions | undefined)
 
@@ -397,14 +455,32 @@ const tui: TuiPlugin = async (api, options) => {
     return "applied"
   }
 
+  // Time of the last tick that fully handled its period. Used to detect
+  // boundaries crossed between ticks (sleep, long intervals) even when the
+  // period now matches lastPeriod again.
+  let lastCheck: number | null = null
+
+  const crossedSince = (from: number, now: number): boolean => {
+    if (now <= from) return false
+    const change = nextPeriodChange(new Date(from), cfg, Math.min(now - from, MAX_CATCH_UP_MS))
+    return change !== null && change.getTime() <= now
+  }
+
   const tick = () => {
     try {
-      const period = periodFor(new Date(), cfg)
-      // On the first apply, and afterwards only when the period actually
-      // changes (a boundary crossing), attempt to apply. Toast whenever we
-      // genuinely switched — this covers both a startup correction (wrong
-      // theme -> right) and a live boundary crossing.
-      if (lastPeriod === null || period !== lastPeriod) {
+      const nowDate = new Date()
+      const now = nowDate.getTime()
+      const period = periodFor(nowDate, cfg)
+      // Apply on the first tick, and afterwards only when a boundary was
+      // crossed: either the period changed, or it changed and changed back
+      // since the last check. Toast whenever we genuinely switched — this
+      // covers both a startup correction and a live boundary crossing.
+      let transient = false
+      if (
+        lastPeriod === null ||
+        period !== lastPeriod ||
+        (lastCheck !== null && crossedSince(lastCheck, now))
+      ) {
         const result = applyForPeriod(period)
 
         if (result === "applied" && cfg.toast) {
@@ -417,7 +493,10 @@ const tui: TuiPlugin = async (api, options) => {
         // "not-ready" / "failed" are transient — leave lastPeriod so we retry.
         // "applied" / "already" / "missing" mean the period is handled (a
         // missing theme was warned once; don't spam it every tick).
-        if (result !== "not-ready" && result !== "failed") {
+        // lastCheck stays put too, so a missed boundary is still seen on retry.
+        if (result === "not-ready" || result === "failed") {
+          transient = true
+        } else {
           lastPeriod = period
         }
 
@@ -427,6 +506,8 @@ const tui: TuiPlugin = async (api, options) => {
           scheduleReadyRetry()
         }
       }
+      if (!transient) lastCheck = now
+      if (!api.lifecycle.signal.aborted) scheduleBoundary(nowDate)
     } catch {
       // Swallow: transient API errors during teardown must not crash the host.
     }
@@ -434,6 +515,20 @@ const tui: TuiPlugin = async (api, options) => {
 
   let timer: ReturnType<typeof setInterval> | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let boundaryTimer: ReturnType<typeof setTimeout> | null = null
+
+  // One-shot timer at the next boundary, so switches happen on time whatever
+  // checkIntervalMs is. The interval stays as a fallback (e.g. clock changes).
+  const scheduleBoundary = (from: Date) => {
+    if (boundaryTimer !== null) clearTimeout(boundaryTimer)
+    boundaryTimer = null
+    const next = nextPeriodChange(from, cfg, MAX_INTERVAL_MS)
+    if (next === null) return
+    boundaryTimer = setTimeout(() => {
+      boundaryTimer = null
+      tick()
+    }, Math.max(0, next.getTime() - from.getTime()))
+  }
 
   const scheduleReadyRetry = () => {
     if (retryTimer !== null) return
@@ -474,6 +569,10 @@ const tui: TuiPlugin = async (api, options) => {
     if (retryTimer !== null) {
       clearTimeout(retryTimer)
       retryTimer = null
+    }
+    if (boundaryTimer !== null) {
+      clearTimeout(boundaryTimer)
+      boundaryTimer = null
     }
   }
   api.lifecycle.onDispose(stop)

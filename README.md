@@ -67,7 +67,7 @@ Pass options using the tuple form (`[spec, options]`):
 | `nightStartHour`  | `number`               | `19`           | **Fixed mode.** Hour (0–23, local time) the night period begins.  |
 | `latitude`        | `number`               | —              | **Solar mode.** Degrees, `-90`–`90` (required for solar mode).    |
 | `longitude`       | `number`               | —              | **Solar mode.** Degrees, `-180`–`180` (required for solar mode).  |
-| `checkIntervalMs` | `number`               | `60000`        | How often to re-evaluate the time (minimum `1000`).               |
+| `checkIntervalMs` | `number`               | `60000`        | Fallback re-check interval (clamped to `1000`–`86400000`).        |
 | `toast`           | `boolean`              | `true`         | Show a toast when the theme switches.                             |
 
 Invalid values fall back to their defaults. In fixed mode, boundaries may wrap
@@ -111,9 +111,12 @@ when it never rises use the night theme.
 - **On launch:** applies the correct theme for the current time. If that means
   changing away from whatever was selected, you get a toast. If it was already
   correct, nothing happens.
-- **While running:** it re-checks every `checkIntervalMs` and switches only when
-  the day/night boundary is crossed (a fixed hour, or the day's sunrise/sunset in
-  solar mode), so a manual `/theme` change survives until the next boundary.
+- **While running:** it switches when the day/night boundary is crossed (a fixed
+  hour, or the day's sunrise/sunset in solar mode), on time regardless of
+  `checkIntervalMs`. A manual `/theme` change survives until the next boundary.
+- **After sleep:** if the machine slept through one or more boundaries, the
+  theme for the current period is re-applied on wake, even if the period is the
+  same as before sleep.
 - **Missing theme:** if a configured theme isn't installed, it warns once via a
   toast at the boundary and leaves the current theme unchanged (it won't spam
   the warning every tick).
