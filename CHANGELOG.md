@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/clappingmonkey/opencode-circadian/compare/v0.3.0...v0.3.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* re-apply the theme after missed boundaries ([#24](https://github.com/clappingmonkey/opencode-circadian/issues/24)) ([8405957](https://github.com/clappingmonkey/opencode-circadian/commit/8405957f31f85fdc00bcb33bdc8e56c4581383cc))
+
 ## [0.3.0](https://github.com/clappingmonkey/opencode-circadian/compare/v0.2.0...v0.3.0) (2026-09-16)
 
 
