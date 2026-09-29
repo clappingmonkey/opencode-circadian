@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/clappingmonkey/opencode-circadian/compare/v0.3.1...v0.3.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* log unexpected errors and back off the ready retry ([#31](https://github.com/clappingmonkey/opencode-circadian/issues/31)) ([53749c9](https://github.com/clappingmonkey/opencode-circadian/commit/53749c950ab7382d3641419c30413e17008c2f93))
+
 ## [0.3.1](https://github.com/clappingmonkey/opencode-circadian/compare/v0.3.0...v0.3.1) (2026-09-27)
 
 
