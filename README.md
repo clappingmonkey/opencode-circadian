@@ -120,6 +120,9 @@ when it never rises use the night theme.
 - **Missing theme:** if a configured theme isn't installed, it warns once via a
   toast at the boundary and leaves the current theme unchanged (it won't spam
   the warning every tick).
+- **Unexpected errors:** it never crashes opencode. Each distinct error is
+  written once to the opencode log (service `opencode-circadian`, up to 20 per
+  session), you get a single warning toast, and it keeps retrying.
 
 ## Requirements
 

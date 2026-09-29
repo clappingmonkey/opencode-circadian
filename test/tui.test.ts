@@ -16,6 +16,7 @@ interface FakeOptions {
   selected?: string
   installed?: string[]
   setResult?: boolean
+  logRejects?: boolean
 }
 
 function fakeApi(opts: FakeOptions = {}) {
@@ -24,8 +25,12 @@ function fakeApi(opts: FakeOptions = {}) {
     selected: opts.selected ?? "other",
     installed: new Set(opts.installed ?? [DAY, NIGHT, "other"]),
     setResult: opts.setResult ?? true,
-    hasThrows: false,
+    hasThrows: false as boolean | string,
+    thrown: undefined as unknown,
+    abortOnHas: false,
+    toastThrows: false,
     readyReads: 0,
+    logs: [] as { service?: string; level?: string; message?: string }[],
     sets: [] as string[],
     toasts: [] as TuiToast[],
     disposers: [] as (() => void | Promise<void>)[],
@@ -41,7 +46,10 @@ function fakeApi(opts: FakeOptions = {}) {
         return state.selected
       },
       has(name: string) {
-        if (state.hasThrows) throw new Error("host gone")
+        if (state.abortOnHas) controller.abort()
+        if (state.thrown !== undefined) throw state.thrown
+        if (state.hasThrows)
+          throw new Error(state.hasThrows === true ? "host gone" : state.hasThrows)
         return state.installed.has(name)
       },
       set(name: string) {
@@ -52,7 +60,16 @@ function fakeApi(opts: FakeOptions = {}) {
     },
     ui: {
       toast(input: TuiToast) {
+        if (state.toastThrows) throw new Error("toast down")
         state.toasts.push(input)
+      },
+    },
+    client: {
+      app: {
+        log(input: { service?: string; level?: string; message?: string }) {
+          state.logs.push(input)
+          return opts.logRejects ? Promise.reject(new Error("log down")) : Promise.resolve({})
+        },
       },
     },
     lifecycle: {
@@ -125,36 +142,53 @@ test("tui: a manual theme change survives until the next boundary", async (t) =>
   assert.equal(infoToasts(state).length, 1)
 })
 
-test("tui: not-ready retries every 250 ms, then applies", async (t) => {
+test("tui: not-ready retries back off from 250 ms", async (t) => {
   const { api, state } = fakeApi({ ready: false, selected: DAY })
   await start(t, api)
   assert.equal(state.readyReads, 1)
-  // Step in 250 ms: mock tick() jumps the clock first, so a timer re-armed
-  // inside a callback only fires on a later tick().
-  t.mock.timers.tick(249)
-  assert.equal(state.readyReads, 1, "retry is 250 ms, not sooner")
-  for (let i = 0; i < 4; i++) t.mock.timers.tick(i === 0 ? 1 : 250)
-  // One pending retry at a time: exactly 4 retries in the first second.
-  assert.equal(state.readyReads, 5)
+  // Mock tick() jumps the clock first, so a timer re-armed inside a callback
+  // only fires on a later tick(). Step to each expected retry.
+  let reads = 1
+  for (const ms of [250, 500, 1_000, 2_000, 4_000, 8_000, 16_000]) {
+    t.mock.timers.tick(ms - 1)
+    assert.equal(state.readyReads, reads, `not before ${ms} ms`)
+    t.mock.timers.tick(1)
+    assert.equal(state.readyReads, ++reads, `retry after ${ms} ms`)
+  }
   assert.deepEqual(state.sets, [])
   state.ready = true
-  t.mock.timers.tick(250)
+  t.mock.timers.tick(32_000)
   assert.deepEqual(state.sets, [NIGHT])
-  const reads = state.readyReads
-  t.mock.timers.tick(1_000)
+  reads = state.readyReads
+  t.mock.timers.tick(10_000)
   assert.equal(state.readyReads, reads, "no retries after success")
+})
+
+test("tui: the ready backoff resets once the theme system is ready", async (t) => {
+  const { api, state } = fakeApi({ ready: false, selected: DAY })
+  await start(t, api)
+  for (const ms of [250, 500, 1_000, 2_000]) t.mock.timers.tick(ms)
+  state.ready = true
+  t.mock.timers.tick(4_000) // ready: applies night
+  assert.deepEqual(state.sets, [NIGHT])
+  // At 07:00 the host is indexing again: the first retry is 250 ms again.
+  state.ready = false
+  t.mock.timers.setTime(local(7, 0) - 1)
+  t.mock.timers.tick(1)
+  const reads = state.readyReads
+  t.mock.timers.tick(250)
+  assert.equal(state.readyReads, reads + 1)
 })
 
 test("tui: interval ticks don't stack extra ready retries", async (t) => {
   const { api, state } = fakeApi({ ready: false, selected: DAY })
   await start(t, api, { checkIntervalMs: 1_000 })
-  const reads: number[] = []
-  for (let i = 0; i < 12; i++) {
-    t.mock.timers.tick(250)
-    reads.push(state.readyReads)
-  }
-  // Per second: 4 retries + 1 interval tick. Stacked retries would grow this.
-  assert.equal(reads[11] - reads[7], 5)
+  for (let i = 0; i < 40; i++) t.mock.timers.tick(250)
+  const before = state.readyReads
+  for (let i = 0; i < 40; i++) t.mock.timers.tick(250)
+  // Backoff is capped at 1 s: one retry + one interval tick per second.
+  // Stacked retries would grow this.
+  assert.ok(state.readyReads - before <= 20, `${state.readyReads - before} reads in 10 s`)
 })
 
 test("tui: a failed set is retried on the next interval", async (t) => {
@@ -260,6 +294,95 @@ test("tui: a throwing host API is swallowed and the next tick retries", async (t
   state.hasThrows = false
   t.mock.timers.tick(MIN)
   assert.deepEqual(state.sets, [NIGHT])
+})
+
+test("tui: unexpected errors are logged once each, with one toast", async (t) => {
+  const { api, state } = fakeApi({ selected: DAY })
+  state.hasThrows = true
+  await start(t, api)
+  t.mock.timers.tick(5 * MIN) // same error on every tick
+  state.hasThrows = "other failure"
+  t.mock.timers.tick(MIN)
+  assert.deepEqual(
+    state.logs.map((l) => [l.service, l.level, l.message]),
+    [
+      ["opencode-circadian", "error", "Error: host gone"],
+      ["opencode-circadian", "error", "Error: other failure"],
+    ],
+  )
+  assert.equal(warnToasts(state).length, 1)
+  assert.match(warnToasts(state)[0].message, /opencode log/)
+})
+
+test("tui: a failing logger never throws into the host", async (t) => {
+  const { api, state } = fakeApi({ selected: DAY, logRejects: true })
+  state.hasThrows = true
+  await start(t, api)
+  await new Promise((resolve) => setImmediate(resolve)) // let the rejection settle
+  assert.equal(state.logs.length, 1)
+  state.hasThrows = false
+  t.mock.timers.tick(MIN)
+  assert.deepEqual(state.sets, [NIGHT])
+})
+
+test("tui: errors during teardown are not reported", async (t) => {
+  const { api, state } = fakeApi({ selected: DAY })
+  state.abortOnHas = true // host shuts down mid-tick
+  state.hasThrows = true
+  await start(t, api)
+  assert.deepEqual(state.logs, [])
+  assert.deepEqual(state.toasts, [])
+})
+
+test("tui: an abort during the first tick leaves no timers running", async (t) => {
+  const { api, state } = fakeApi({ ready: false, selected: DAY })
+  state.abortOnHas = true
+  state.ready = true
+  await start(t, api)
+  const reads = state.readyReads
+  t.mock.timers.tick(24 * 60 * MIN)
+  assert.equal(state.readyReads, reads)
+})
+
+test("tui: a throwing toast while reporting never escapes", async (t) => {
+  const { api, state } = fakeApi({ selected: DAY })
+  state.hasThrows = true
+  state.toastThrows = true
+  await start(t, api) // must not reject
+  t.mock.timers.tick(MIN)
+  assert.equal(state.logs.length, 1)
+})
+
+test("tui: hostile thrown values never escape", async (t) => {
+  const revoked = Proxy.revocable({}, {})
+  revoked.revoke()
+  const badName = new Error("x")
+  Object.defineProperty(badName, "name", {
+    get() {
+      throw new Error("no name")
+    },
+  })
+  const hostile: unknown[] = [
+    revoked.proxy,
+    {
+      toString() {
+        throw new Error("no string")
+      },
+    },
+    Object.create(null),
+    Symbol("s"),
+    null,
+    badName,
+  ]
+  for (const thrown of hostile) {
+    const { api, state } = fakeApi({ selected: DAY })
+    state.thrown = thrown
+    t.mock.timers.reset()
+    await start(t, api) // must not reject
+    t.mock.timers.tick(MIN) // must not throw from a timer
+    assert.equal(state.logs.length, 1)
+    assert.equal(warnToasts(state).length, 1)
+  }
 })
 
 // Sleep: the clock jumps without timers firing, then overdue timers run.

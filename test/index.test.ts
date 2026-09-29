@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import {
+  describeError,
   nextPeriodChange,
   periodFor,
   resolveConfig,
@@ -437,4 +438,16 @@ test("nextPeriodChange: every boundary in a year matches a minute-by-minute scan
     }
     assert.equal(got, expected)
   }
+})
+
+test("describeError: formats errors and survives hostile values", () => {
+  const e = new TypeError("bad")
+  assert.equal(describeError(e).message, "TypeError: bad")
+  assert.equal(describeError(e).stack, e.stack)
+  assert.equal(describeError("plain").message, "plain")
+  assert.equal(describeError(Symbol("s")).message, "Symbol(s)")
+  assert.equal(describeError(Object.create(null)).message, "Unknown error (could not be described)")
+  const revoked = Proxy.revocable({}, {})
+  revoked.revoke()
+  assert.equal(describeError(revoked.proxy).message, "Unknown error (could not be described)")
 })
