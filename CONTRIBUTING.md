@@ -27,10 +27,11 @@ Both must pass before opening a PR — they are enforced in CI.
 Formatting (Biome), whitespace/YAML/JSON checks and workflow linting
 (actionlint, zizmor) run through [prek](https://github.com/j178/prek), a
 drop-in replacement for pre-commit. CI runs the same hooks in the
-**pre-commit checks** job.
+**pre-commit checks** job. prek is pinned in `mise.toml` (checksums in
+`mise.lock`), so [mise](https://mise.jdx.dev) installs the same version CI uses:
 
 ```bash
-brew install prek          # or: mise use prek, uv tool install prek
+mise trust && mise install # installs prek (or: brew install prek)
 prek install               # run the hooks on every commit
 prek run --all-files       # run everything once
 prek run biome-check --all-files   # format only

@@ -25,22 +25,18 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      # Installed directly so the binary is checksum-verified (prek-action
-      # v3.0.0 has no checksum for 0.5.3 and skips verification).
-      - name: Install prek
-        env:
-          PREK_VERSION: 0.5.3
-          PREK_SHA256: c1475ddc56df0003c780557d9b52273d9eb19c9ef8d91143f3ce03511182a36e
-        run: |
-          asset=prek-x86_64-unknown-linux-gnu
-          curl -fsSLo "$RUNNER_TEMP/prek.tar.gz" \
-            "https://github.com/j178/prek/releases/download/v$PREK_VERSION/$asset.tar.gz"
-          echo "$PREK_SHA256  $RUNNER_TEMP/prek.tar.gz" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/prek.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/$asset" >> "$GITHUB_PATH"
+      # Installs prek from mise.toml; mise.lock pins its URL and checksum
+      # (the action adds --locked). The mise binary itself is pinned here and
+      # checked against mise's signed checksums.
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.14
+          cache: false
 
       - name: Run hooks
         run: prek run --all-files --show-diff-on-failure --skip zizmor
+        env:
+          MISE_GITHUB_TOKEN: "" # set by mise-action; hooks don't need it
 
       # Only zizmor gets a token (for its online audits; read-only).
       - name: Run zizmor
