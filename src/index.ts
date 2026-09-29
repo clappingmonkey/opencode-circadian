@@ -57,6 +57,8 @@ import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
 export type Mode = "fixed" | "solar"
 
+/** Documented plugin options. At runtime opencode passes untyped JSON, so
+ * `resolveConfig` validates every field instead of trusting this shape. */
 export interface CircadianOptions {
   mode?: Mode
   dayTheme?: string
@@ -142,7 +144,9 @@ export function toLongitude(value: unknown, fallback: number): number {
   return value
 }
 
-export function resolveConfig(options: CircadianOptions | undefined): ResolvedConfig {
+export function resolveConfig(
+  options: CircadianOptions | Readonly<Record<string, unknown>> | undefined,
+): ResolvedConfig {
   const o = options ?? {}
 
   let checkIntervalMs: number = DEFAULTS.checkIntervalMs
@@ -408,7 +412,7 @@ function firstMsOfCycle(n: number, longitude: number): number {
 }
 
 const tui: TuiPlugin = async (api, options) => {
-  const cfg = resolveConfig(options as CircadianOptions | undefined)
+  const cfg = resolveConfig(options)
 
   const themeFor = (period: Period): string => (period === "day" ? cfg.dayTheme : cfg.nightTheme)
 
@@ -539,7 +543,7 @@ const tui: TuiPlugin = async (api, options) => {
   // If solar mode was requested but coordinates were missing/invalid,
   // resolveConfig fell back to fixed mode. Surface that once so a typo'd
   // latitude/longitude isn't silently ignored.
-  if ((options as CircadianOptions | undefined)?.mode === "solar" && cfg.mode === "fixed") {
+  if (options?.mode === "solar" && cfg.mode === "fixed") {
     api.ui.toast({
       variant: "warning",
       title: "circadian",

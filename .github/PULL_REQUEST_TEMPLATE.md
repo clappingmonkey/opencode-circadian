@@ -9,8 +9,8 @@ Closes #
 <!-- Tick anything this PR touches so reviewers know what to watch. -->
 
 - [ ] Theme-switching logic (`periodFor`, boundaries, gentle override)
-- [ ] Plugin options (`dayTheme`, `nightTheme`, `dayStartHour`, `nightStartHour`,
-      `checkIntervalMs`, `toast`) — README options table updated
+- [ ] Plugin options (`mode`, `dayTheme`, `nightTheme`, `dayStartHour`, `nightStartHour`,
+      `latitude`, `longitude`, `checkIntervalMs`, `toast`) — README options table updated
 - [ ] Lifecycle / timer / toast behavior
 - [ ] Packaging (`package.json` `exports`, `files`, published contents)
 - [ ] No user-facing behavior change

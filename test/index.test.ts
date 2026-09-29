@@ -71,11 +71,11 @@ test("resolveConfig clamps checkIntervalMs to [MIN, MAX] and floors it", () => {
 
 test("resolveConfig falls back on hostile theme/hour/toast inputs", () => {
   const c = resolveConfig({
-    dayTheme: "" as unknown as string,
-    nightTheme: 123 as unknown as string,
+    dayTheme: "",
+    nightTheme: 123,
     dayStartHour: -1,
     nightStartHour: 24,
-    toast: "yes" as unknown as boolean,
+    toast: "yes",
   })
   assert.equal(c.dayTheme, "catppuccin")
   assert.equal(c.nightTheme, "aura")
@@ -199,7 +199,7 @@ test("resolveConfig: solar fallback uses DEFAULT hours, ignoring caller hours", 
 test("resolveConfig: mode defaults to fixed; unknown mode coerces to fixed", () => {
   assert.equal(resolveConfig({}).mode, "fixed")
   assert.equal(resolveConfig(undefined).mode, "fixed")
-  assert.equal(resolveConfig({ mode: "twilight" as unknown as "fixed" }).mode, "fixed")
+  assert.equal(resolveConfig({ mode: "twilight" }).mode, "fixed")
 })
 
 // Reference values from api.sunrise-sunset.org (UTC), matched within 5 minutes.
