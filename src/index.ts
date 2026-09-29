@@ -84,9 +84,11 @@ const DEFAULTS = {
 const MIN_INTERVAL_MS = 1_000
 // 24h, safely under setInterval's 32-bit signed max (2_147_483_647 ms).
 const MAX_INTERVAL_MS = 86_400_000
-// Short retry used at boot while the theme catalog is still indexing, so the
-// correct theme lands promptly instead of after a full check interval.
+// First retry while the theme catalog is still indexing, so the correct theme
+// lands promptly at boot. Doubles on each miss, capped at checkIntervalMs.
 const READY_RETRY_MS = 250
+// Distinct unexpected errors logged per session (the rest are dropped).
+const MAX_LOGGED_ERRORS = 20
 
 export type Period = "day" | "night"
 
@@ -496,17 +498,53 @@ const tui: TuiPlugin = async (api, options) => {
           lastPeriod = period
         }
 
-        // If the theme system wasn't ready yet, retry quickly instead of
+        // If the theme system wasn't ready yet, retry with backoff instead of
         // waiting a full interval, so the correct theme lands promptly at boot.
-        if (result === "not-ready" && !api.lifecycle.signal.aborted) {
-          scheduleReadyRetry()
+        if (result === "not-ready") {
+          if (!api.lifecycle.signal.aborted) scheduleReadyRetry()
+        } else {
+          readyRetryMs = READY_RETRY_MS
+          if (retryTimer !== null) clearTimeout(retryTimer)
+          retryTimer = null
         }
       }
       if (!transient) lastCheck = now
       if (!api.lifecycle.signal.aborted) scheduleBoundary(nowDate)
-    } catch {
-      // Swallow: transient API errors during teardown must not crash the host.
+    } catch (error) {
+      // Never throw into the host; report it and let the next tick retry.
+      reportError(error)
     }
+  }
+
+  // Unexpected errors go to the opencode log (console output is hidden in
+  // the TUI), each distinct one once, plus a single toast per session.
+  // Every step is guarded: reporting must never throw into the host.
+  const loggedErrors = new Set<string>()
+  const reportError = (error: unknown) => {
+    try {
+      // Host API errors during teardown are expected; stay quiet.
+      if (api.lifecycle.signal.aborted) return
+      const { message, stack } = describeError(error)
+      if (loggedErrors.has(message) || loggedErrors.size >= MAX_LOGGED_ERRORS) return
+      loggedErrors.add(message)
+      try {
+        Promise.resolve(
+          api.client.app.log({
+            service: "opencode-circadian",
+            level: "error",
+            message,
+            extra: { stack },
+          }),
+        ).catch(() => {})
+      } catch {}
+      if (loggedErrors.size === 1) {
+        api.ui.toast({
+          variant: "warning",
+          title: "circadian",
+          message: "Unexpected error; see the opencode log. Will keep retrying.",
+        })
+      }
+    } catch {}
   }
 
   let timer: ReturnType<typeof setInterval> | null = null
@@ -529,12 +567,14 @@ const tui: TuiPlugin = async (api, options) => {
     )
   }
 
+  let readyRetryMs = READY_RETRY_MS
   const scheduleReadyRetry = () => {
     if (retryTimer !== null) return
     retryTimer = setTimeout(() => {
       retryTimer = null
       tick()
-    }, READY_RETRY_MS)
+    }, readyRetryMs)
+    readyRetryMs = Math.min(readyRetryMs * 2, cfg.checkIntervalMs)
   }
 
   // If the plugin is initialized already-aborted, do nothing (no orphan timer).
@@ -553,13 +593,6 @@ const tui: TuiPlugin = async (api, options) => {
     })
   }
 
-  // Initial application at launch. Toasts only if it actually corrects the
-  // theme (i.e. the selected theme was wrong for the current time of day).
-  tick()
-
-  // Periodic boundary checks.
-  timer = setInterval(tick, cfg.checkIntervalMs)
-
   const stop = () => {
     if (timer !== null) {
       clearInterval(timer)
@@ -574,8 +607,29 @@ const tui: TuiPlugin = async (api, options) => {
       boundaryTimer = null
     }
   }
+  // Register cleanup before the first tick, which may itself see an abort.
   api.lifecycle.onDispose(stop)
   api.lifecycle.signal.addEventListener("abort", stop, { once: true })
+
+  // Initial application at launch. Toasts only if it actually corrects the
+  // theme (i.e. the selected theme was wrong for the current time of day).
+  tick()
+
+  // Periodic boundary checks, unless the host shut down during the first tick.
+  if (!api.lifecycle.signal.aborted) timer = setInterval(tick, cfg.checkIntervalMs)
+}
+
+/** Message and stack of a thrown value; never throws, whatever was thrown. */
+export function describeError(error: unknown): { message: string; stack?: string } {
+  try {
+    if (error instanceof Error) {
+      const stack = typeof error.stack === "string" ? error.stack : undefined
+      return { message: `${String(error.name)}: ${String(error.message)}`, stack }
+    }
+    return { message: String(error) }
+  } catch {
+    return { message: "Unknown error (could not be described)" }
+  }
 }
 
 // `id` is intentionally omitted: for npm packages opencode uses the package
