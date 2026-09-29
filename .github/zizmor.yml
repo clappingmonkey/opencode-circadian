@@ -1,0 +1,15 @@
+rules:
+  # App token scope is limited by the App installation's permissions.
+  github-app:
+    ignore:
+      - release.yaml
+      - renovate.yaml
+  # actionlint 1.7.12 doesn't accept the `$/` syntax yet.
+  self-repository:
+    ignore:
+      - release.yaml
+  # Metadata-only: re-checks the PR via the API, never checks out or runs PR
+  # code. Replaces pull_request_target (see the file's header comment).
+  dangerous-triggers:
+    ignore:
+      - renovate-approve.yaml

@@ -19,6 +19,7 @@ Closes #
 
 - [ ] `npm run typecheck` passes
 - [ ] `npm test` passes
+- [ ] Pre-commit checks pass (`prek run --all-files`)
 - [ ] Manually verified in opencode (if behavior changed): <!-- how? -->
 
 ## Checklist

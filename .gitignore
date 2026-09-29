@@ -18,5 +18,9 @@ npm-debug.log*
 .vscode/
 *.swp
 
+# mise local overrides
+mise.local.toml
+mise.local.lock
+
 # Personal task tracking
 TODO.md

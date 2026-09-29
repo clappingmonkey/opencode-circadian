@@ -4,7 +4,8 @@
     "config:best-practices",
     ":automergeMinor",
     ":automergePatch",
-    ":automergeDigest"
+    ":automergeDigest",
+    ":enablePreCommit"
   ],
   "automergeType": "pr",
   "platformAutomerge": true,
@@ -33,8 +34,8 @@
       "labels": ["dependencies", "automerge"]
     },
     {
-      "description": "npm already gets a 3-day minimum release age from config:best-practices; apply the same cooldown to GitHub Actions.",
-      "matchManagers": ["github-actions"],
+      "description": "npm already gets a 3-day minimum release age from config:best-practices; apply the same cooldown to GitHub Actions, pre-commit hooks and mise tools.",
+      "matchManagers": ["github-actions", "pre-commit", "mise"],
       "minimumReleaseAge": "3 days"
     },
     {
@@ -54,6 +55,14 @@
     {
       "matchManagers": ["github-actions"],
       "addLabels": ["github-actions"]
+    },
+    {
+      "matchManagers": ["pre-commit"],
+      "addLabels": ["pre-commit"]
+    },
+    {
+      "matchManagers": ["mise"],
+      "addLabels": ["mise"]
     }
   ]
 }

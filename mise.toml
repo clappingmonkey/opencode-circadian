@@ -1,0 +1,10 @@
+# Dev tools for local use and CI. Keep this file tools-only (no env, hooks or
+# tasks) so `mise trust` can't run code. Versions and checksums are in mise.lock.
+min_version = "2026.7.12"
+
+[tools]
+prek = "0.5.3"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["macos-arm64", "macos-x64", "linux-x64", "linux-arm64"]
