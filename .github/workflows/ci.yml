@@ -11,6 +11,39 @@ permissions:
   contents: read
 
 jobs:
+  pre-commit:
+    name: pre-commit checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same Node as the other jobs for the biome hook (language: node).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Installs prek from mise.toml; mise.lock pins its URL and checksum
+      # (the action adds --locked). The mise binary itself is pinned here and
+      # checked against mise's signed checksums.
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.14
+          cache: false
+
+      - name: Run hooks
+        run: prek run --all-files --show-diff-on-failure --skip zizmor
+        env:
+          MISE_GITHUB_TOKEN: "" # set by mise-action; hooks don't need it
+
+      # Only zizmor gets a token (for its online audits; read-only).
+      - name: Run zizmor
+        run: prek run --all-files zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest

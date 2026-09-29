@@ -1,7 +1,7 @@
 // Tests for the `tui` closure: timers, lifecycle and theme switching, driven
 // through a fake host API and node:test mock timers.
 import assert from "node:assert/strict"
-import { test, type TestContext } from "node:test"
+import { type TestContext, test } from "node:test"
 
 import type { TuiPluginApi, TuiPluginMeta, TuiToast } from "@opencode-ai/plugin/tui"
 
@@ -195,7 +195,12 @@ test("tui: solar mode without coordinates warns and uses fixed hours", async (t)
 test("tui: solar mode switches at sunrise", async (t) => {
   // London, 2026-06-21: sunrise ~03:44Z. Absolute instants, so TZ-independent.
   const { api, state } = fakeApi({ selected: DAY })
-  await start(t, api, { mode: "solar", latitude: 51.5, longitude: -0.1 }, Date.UTC(2026, 5, 21, 3, 0))
+  await start(
+    t,
+    api,
+    { mode: "solar", latitude: 51.5, longitude: -0.1 },
+    Date.UTC(2026, 5, 21, 3, 0),
+  )
   assert.equal(warnToasts(state).length, 0)
   assert.deepEqual(state.sets, [NIGHT])
   t.mock.timers.tick(30 * MIN) // 03:30Z, still night
