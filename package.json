@@ -42,7 +42,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.18.33",
+    "@opencode-ai/plugin": "1.18.34",
     "@types/node": "24.19.0",
     "typescript": "7.0.2"
   },
