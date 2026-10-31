@@ -17,7 +17,7 @@ repos:
       - id: check-added-large-files
 
   - repo: https://github.com/biomejs/pre-commit
-    rev: e5f293b7668ac8bfeb2c4bc6740affc40b4f51e1 # frozen: v2.6.2
+    rev: f9fccc969fb42a59a17a1a430df9f38851f9b2da # frozen: v2.6.3
     hooks:
       - id: biome-check
 
